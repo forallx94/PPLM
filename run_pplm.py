@@ -362,17 +362,26 @@ def get_classifier(
 
     return classifier, label_id
 
-
+# typing으로 받게될 변수 고정 -> 후는 결과로 파악됨
 def get_bag_of_words_indices(bag_of_words_ids_or_paths: List[str], tokenizer) -> \
         List[List[List[int]]]:
     bow_indices = []
+    # 여러개가 들어올 것으로 가정 현재는 ['military']
     for id_or_path in bag_of_words_ids_or_paths:
+        # 자신들의 미리 설정된 데이터에 존재한다면
         if id_or_path in BAG_OF_WORDS_ARCHIVE_MAP:
+            # transformer의 cached_path로 filepath 설정
+            # 즉 현상황은 cached_path("https://s3.amazonaws.com/models.huggingface.co/bert/pplm/bow/military.txt")
             filepath = cached_path(BAG_OF_WORDS_ARCHIVE_MAP[id_or_path])
         else:
+            # 아니면 단순 path 로 설정
             filepath = id_or_path
+
+        # 내부에는 military 와 연관 단어 리스트가 존재 이를 정리해서 words 에 정리
         with open(filepath, "r") as f:
             words = f.read().strip().split("\n")
+
+        # 각각의 단어를 tokenize 하여 리스트에 삽입
         bow_indices.append(
             [tokenizer.encode(word.strip(),
                               add_prefix_space=True,
@@ -421,6 +430,7 @@ def full_text_generation(
         verbosity_level=REGULAR,
         **kwargs
 ):
+    # bow 예제의 경우 discrim = None , class_label=-1, device는 gpu or cpu
     classifier, class_id = get_classifier(
         discrim,
         class_label,
@@ -505,6 +515,8 @@ def full_text_generation(
     return unpert_gen_tok_text, pert_gen_tok_texts, discrim_losses, losses_in_time
 
 
+# context = tokenized_cond_text 으로 시작 단어를 추가하여 tokenize 한 데이터 [50256, 464, 21219]
+# 
 def generate_text_pplm(
         model,
         tokenizer,
@@ -533,23 +545,31 @@ def generate_text_pplm(
 ):
     output_so_far = None
     if context:
+        # tensor로 변경
         context_t = torch.tensor(context, device=device, dtype=torch.long)
+        # 2차원이 될때까지 차원 확장
         while len(context_t.shape) < 2:
             context_t = context_t.unsqueeze(0)
+        # 2차원 결과를 output_so_far 에 설정
         output_so_far = context_t
 
     # collect one hot vectors for bags of words
+    # 처음에는 None 결과도 None 반환
     one_hot_bows_vectors = build_bows_one_hot_vectors(bow_indices, tokenizer,
                                                       device)
 
+    # 앞으로의 변수 설정
     grad_norms = None
     last = None
     unpert_discrim_loss = 0
     loss_in_time = []
 
+    # length=defalt : 100, bow : 50 ,  verbosity_level = 1 , VERBOSE = 2
     if verbosity_level >= VERBOSE:
+        # tqdm range 진행 상황 표시 
         range_func = trange(length, ascii=True)
     else:
+        # 표시 필요 없어 range 사용
         range_func = range(length)
 
     for i in range_func:
@@ -558,7 +578,9 @@ def generate_text_pplm(
         # Note that GPT takes 2 inputs: past + current_token
 
         # run model forward to obtain unperturbed
+        # Bow : past = None, output_so_far = [[50256,   464, 21219]].torch
         if past is None and output_so_far is not None:
+            # 마지막을 선택하되 리스트를 유지 (안하면 한 차원 줄어듬)
             last = output_so_far[:, -1:]
             if output_so_far.shape[1] > 1:
                 _, past, _ = model(output_so_far[:, :-1])
@@ -703,16 +725,19 @@ def run_pplm_example(
         colorama=False,
         verbosity='regular'
 ):
-    # set Random seed
+    # random seed 설정
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     # set verbosiry
+    # GPT2 사이즈 설정 과정으로 보임 regular 여서 1으로 반환
     verbosity_level = VERBOSITY_LEVELS.get(verbosity.lower(), REGULAR)
 
     # set the device
+    # gpu,cpu 설정 과정
     device = "cuda" if torch.cuda.is_available() and not no_cuda else "cpu"
 
+    # discrim 모델 설정 과정 예제는 discrim = 'sentiment'
     if discrim == 'generic':
         set_generic_model_params(discrim_weights, discrim_meta)
 
@@ -727,6 +752,7 @@ def run_pplm_example(
                 "to discriminator's = {}".format(discrim, pretrained_model))
 
     # load pretrained model
+    # bow 의 경우 기존의 GPT2 model load
     model = GPT2LMHeadModel.from_pretrained(
         pretrained_model,
         output_hidden_states=True
@@ -742,21 +768,26 @@ def run_pplm_example(
         param.requires_grad = False
 
     # figure out conditioning text
+    # 기본값인 uncond=False 
     if uncond:
         tokenized_cond_text = tokenizer.encode(
             [tokenizer.bos_token],
             add_special_tokens=False
         )
     else:
+        # Bow 예제 cond_text="The potato"
         raw_text = cond_text
+        # cond_text 가 없을시 즉석으로 입력받아 설정
         while not raw_text:
             print("Did you forget to add `--cond_text`? ")
             raw_text = input("Model prompt >>> ")
+        #그후 시작을 나타내는 토큰을 붙이고 토큰화 실행
         tokenized_cond_text = tokenizer.encode(
             tokenizer.bos_token + raw_text,
             add_special_tokens=False
         )
 
+    # 시작 문구 출력
     print("= Prefix of sentence =")
     print(tokenizer.decode(tokenized_cond_text))
     print()
