@@ -760,7 +760,7 @@ def run_pplm_example(
         discriminator_pretrained_model = DISCRIMINATOR_MODELS_PARAMS[discrim][
             "pretrained_model"
         ]
-        if pretrained_model != discriminator_pretrained_model:S
+        if pretrained_model != discriminator_pretrained_model:
             pretrained_model = discriminator_pretrained_model
             if verbosity_level >= REGULAR:
                 print("discrim = {}, pretrained_model set "
