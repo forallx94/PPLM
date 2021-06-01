@@ -431,23 +431,28 @@ def full_text_generation(
         **kwargs
 ):
     # bow 예제의 경우 discrim = None , class_label=-1, device는 gpu or cpu
+
+    # disrim model 을 위한 변수 설정 과정으로 보임 dow 의 경우 단순히 None, None 반환
     classifier, class_id = get_classifier(
         discrim,
         class_label,
         device
     )
 
+    # 단어 리스트를 받아 tokernize 진행 리스트안에 단어 리스트(단어가 하나가 아닌경우도 존재)
     bow_indices = []
-    if bag_of_words:
+    if bag_of_words: 
         bow_indices = get_bag_of_words_indices(bag_of_words.split(";"),
                                                tokenizer)
 
+    # classifier None 임으로 skip 
     if bag_of_words and classifier:
         loss_type = PPLM_BOW_DISCRIM
         if verbosity_level >= REGULAR:
             print("Both PPLM-BoW and PPLM-Discrim are on. "
                   "This is not optimized.")
 
+    # bow, discrim 사용 모델 print
     elif bag_of_words:
         loss_type = PPLM_BOW
         if verbosity_level >= REGULAR:
@@ -545,7 +550,7 @@ def generate_text_pplm(
 ):
     output_so_far = None
     if context:
-        # tensor로 변경
+        # 시작을 의미하는 토큰을 붙인 context(시작 단어)를 tensor로 변경
         context_t = torch.tensor(context, device=device, dtype=torch.long)
         # 2차원이 될때까지 차원 확장
         while len(context_t.shape) < 2:
@@ -554,7 +559,7 @@ def generate_text_pplm(
         output_so_far = context_t
 
     # collect one hot vectors for bags of words
-    # 처음에는 None 결과도 None 반환
+    # bow_indices : None 결과도 None 반환
     one_hot_bows_vectors = build_bows_one_hot_vectors(bow_indices, tokenizer,
                                                       device)
 
@@ -565,8 +570,9 @@ def generate_text_pplm(
     loss_in_time = []
 
     # length=defalt : 100, bow : 50 ,  verbosity_level = 1 , VERBOSE = 2
+    # 3 >= 2
     if verbosity_level >= VERBOSE:
-        # tqdm range 진행 상황 표시 
+        # tqdm range 진행 상황 표시 50
         range_func = trange(length, ascii=True)
     else:
         # 표시 필요 없어 range 사용
@@ -579,22 +585,31 @@ def generate_text_pplm(
 
         # run model forward to obtain unperturbed
         # Bow : past = None, output_so_far = [[50256,   464, 21219]].torch
+
+        # 과거가 None 이며 output_so_far 가 존재할때 즉, 처음일때
         if past is None and output_so_far is not None:
             # 마지막을 선택하되 리스트를 유지 (안하면 한 차원 줄어듬)
             last = output_so_far[:, -1:]
+
+            # 사용된 단어가 2개 이상이면 마지막 토큰을 제외하여 model에 넣고 그중 중앙을 past로 저장
             if output_so_far.shape[1] > 1:
                 _, past, _ = model(output_so_far[:, :-1])
 
+        # unpert_logits.shape [1,3,50257(vocab size)]
+        # unpert_past len = 24 , unpert_past[0].shape [2, 1, 16, 3, 64]
+        # unpert_all_hidden len = 25, unpert_all_hidden[0].shape [1, 3, 1024]
         unpert_logits, unpert_past, unpert_all_hidden = model(output_so_far)
         unpert_last_hidden = unpert_all_hidden[-1]
 
         # check if we are abowe grad max length
+        # 현재위치가 grad_length 보다 크다면 current_stepsize를 0으로 
         if i >= grad_length:
             current_stepsize = stepsize * 0
         else:
             current_stepsize = stepsize
 
         # modify the past if necessary
+        # perturb는 flase 여서 
         if not perturb or num_iterations == 0:
             pert_past = past
 
@@ -745,7 +760,7 @@ def run_pplm_example(
         discriminator_pretrained_model = DISCRIMINATOR_MODELS_PARAMS[discrim][
             "pretrained_model"
         ]
-        if pretrained_model != discriminator_pretrained_model:
+        if pretrained_model != discriminator_pretrained_model:S
             pretrained_model = discriminator_pretrained_model
             if verbosity_level >= REGULAR:
                 print("discrim = {}, pretrained_model set "
@@ -781,7 +796,7 @@ def run_pplm_example(
         while not raw_text:
             print("Did you forget to add `--cond_text`? ")
             raw_text = input("Model prompt >>> ")
-        #그후 시작을 나타내는 토큰을 붙이고 토큰화 실행
+        #그 후 시작을 나타내는 토큰을 붙이고 토큰화 실행
         tokenized_cond_text = tokenizer.encode(
             tokenizer.bos_token + raw_text,
             add_special_tokens=False
@@ -964,4 +979,7 @@ if __name__ == '__main__':
                         help="verbosiry level")
 
     args = parser.parse_args()
+
+    import pdb
+    pdb.set_trace()
     run_pplm_example(**vars(args))
